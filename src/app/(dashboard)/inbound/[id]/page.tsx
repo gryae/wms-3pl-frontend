@@ -119,6 +119,14 @@ export default function InboundDetailsPage() {
         await api.post(`/inbounds/${id}/receive`, { items: itemsPayload });
         alert(t('common.success'));
       } else if (action === 'complete') {
+        // Frontend validation: at least one item must have recorded qty
+        const hasAnyQty = inbound.items.some(
+          (item) => (receivedQtys[item.productId] || 0) > 0 || (rejectQtys[item.productId] || 0) > 0
+        );
+        if (!hasAnyQty) {
+          setError('Tidak bisa finalize: isi receivedQty atau rejectQty minimal untuk satu item sebelum menyelesaikan inbound.');
+          return;
+        }
         await api.post(`/inbounds/${id}/complete`);
       } else if (action === 'cancel') {
         if (!cancelReason) {

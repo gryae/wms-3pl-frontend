@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Edit, Trash2 } from 'lucide-react';
 import { useWmsStore } from '@/store/useWmsStore';
 
 interface Column<T> {
-  header: string;
+  header: React.ReactNode;
   accessor: (item: T) => React.ReactNode;
 }
 

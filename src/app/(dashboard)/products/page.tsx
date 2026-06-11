@@ -14,6 +14,9 @@ interface Product {
   name: string;
   description?: string;
   hpp: number;
+  length?: number;
+  width?: number;
+  height?: number;
   weight?: number;
   unit: string;
   status: 'ACTIVE' | 'INACTIVE';
@@ -50,6 +53,9 @@ export default function ProductsPage() {
   const [description, setDescription] = useState('');
   const [hpp, setHpp] = useState(0);
   const [weight, setWeight] = useState(0);
+  const [length, setLength] = useState(0);
+  const [width, setWidth] = useState(0);
+  const [height, setHeight] = useState(0);
   const [unit, setUnit] = useState('pcs');
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
 
@@ -105,6 +111,9 @@ export default function ProductsPage() {
       description: description || undefined,
       hpp: Number(hpp),
       weight: weight ? Number(weight) : undefined,
+      length: length ? Number(length) : undefined,
+      width: width ? Number(width) : undefined,
+      height: height ? Number(height) : undefined,
       unit,
       status,
     };
@@ -134,6 +143,9 @@ export default function ProductsPage() {
     setDescription(p.description || '');
     setHpp(Number(p.hpp));
     setWeight(p.weight || 0);
+    setLength(Number(p.length) || 0);
+    setWidth(Number(p.width) || 0);
+    setHeight(Number(p.height) || 0);
     setUnit(p.unit);
     setStatus(p.status);
     setOpenModal(true);
@@ -200,6 +212,9 @@ export default function ProductsPage() {
     setDescription('');
     setHpp(0);
     setWeight(0);
+    setLength(0);
+    setWidth(0);
+    setHeight(0);
     setUnit('pcs');
     setStatus('ACTIVE');
     setError(null);
@@ -230,6 +245,16 @@ export default function ProductsPage() {
       ),
     },
     { header: 'Weight', accessor: (p: Product) => <span>{p.weight ? `${p.weight} kg` : '-'}</span> },
+    {
+      header: 'Dimensi (PxLxT)',
+      accessor: (p: Product) => (
+        <span className="text-[10px] font-mono">
+          {(p.length || p.width || p.height)
+            ? `${Number(p.length || 0).toFixed(0)}×${Number(p.width || 0).toFixed(0)}×${Number(p.height || 0).toFixed(0)} cm`
+            : <span className="text-slate-300">—</span>}
+        </span>
+      ),
+    },
     { header: 'Unit', accessor: (p: Product) => <span>{p.unit}</span> },
     {
       header: 'Status',
@@ -447,6 +472,49 @@ export default function ProductsPage() {
                   onChange={(e) => setWeight(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold focus:outline-none"
                 />
+              </div>
+
+              {/* Dimensions P x L x T */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Dimensi Produk — Panjang × Lebar × Tinggi (cm)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 mb-0.5">Panjang (cm)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={length}
+                      onChange={(e) => setLength(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold text-center focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 mb-0.5">Lebar (cm)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={width}
+                      onChange={(e) => setWidth(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold text-center focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 mb-0.5">Tinggi (cm)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={height}
+                      onChange={(e) => setHeight(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold text-center focus:outline-none"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>

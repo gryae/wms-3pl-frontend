@@ -48,7 +48,6 @@ export default function ReturnsPage() {
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [selectedSellerId, setSelectedSellerId] = useState(user?.sellerId || '');
   const [outboundId, setOutboundId] = useState('');
-  const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedItems, setSelectedItems] = useState<{ productId: string; quantity: number }[]>([]);
 
@@ -138,14 +137,12 @@ export default function ReturnsPage() {
       await api.post('/returns', {
         sellerId: sId,
         outboundId: outboundId || undefined,
-        reason,
         notes: notes || undefined,
         items: selectedItems,
       });
       alert(t('common.success'));
       setCreateOpen(false);
       // Reset form
-      setReason('');
       setNotes('');
       setOutboundId('');
       setSelectedItems([]);
@@ -182,12 +179,7 @@ export default function ReturnsPage() {
         </div>
       ),
     },
-    {
-      header: t('returns.reason'),
-      accessor: (r: ReturnHeader) => (
-        <span className="text-[10px] text-slate-700 dark:text-zinc-300 font-semibold">{r.reason}</span>
-      ),
-    },
+
     {
       header: t('common.status'),
       accessor: (r: ReturnHeader) => (
@@ -306,29 +298,15 @@ export default function ReturnsPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Reason for Return</label>
-                  <input
-                    required
-                    type="text"
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder="Wrong size / Damaged on transit..."
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Linked Outbound ID (Optional)</label>
-                  <input
-                    type="text"
-                    value={outboundId}
-                    onChange={(e) => setOutboundId(e.target.value)}
-                    placeholder="Outbound order CUID..."
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold focus:outline-none"
-                  />
-                </div>
+              <div>
+                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Linked Outbound ID (Optional)</label>
+                <input
+                  type="text"
+                  value={outboundId}
+                  onChange={(e) => setOutboundId(e.target.value)}
+                  placeholder="Outbound order CUID..."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold focus:outline-none"
+                />
               </div>
 
               <div>

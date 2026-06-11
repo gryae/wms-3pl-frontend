@@ -19,6 +19,8 @@ import {
   ChevronRight,
   ArrowRight,
   ClipboardCheck,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 
 interface OutboundItem {
@@ -77,6 +79,13 @@ export default function FulfillmentPage() {
   const [actionInProgress, setActionInProgress] = useState(false);
   const [successLabelOutboundId, setSuccessLabelOutboundId] = useState<string | null>(null);
   const [successLabelNo, setSuccessLabelNo] = useState<string | null>(null);
+
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkInProgress, setBulkInProgress] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(0);
+  const [bulkTotal, setBulkTotal] = useState(0);
+  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
 
   const fetchProcessingOrders = async () => {
     setLoading(true);
@@ -243,13 +252,113 @@ export default function FulfillmentPage() {
     }
   };
 
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedIds(next);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredOrders.length && filteredOrders.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredOrders.map((o) => o.id)));
+    }
+  };
+
+  const handleBulkPickAndPack = async () => {
+    if (selectedIds.size === 0) return;
+    const orderIds = Array.from(selectedIds);
+    setBulkInProgress(true);
+    setBulkProgress(0);
+    setBulkTotal(orderIds.length);
+    setBulkErrors([]);
+
+    for (let i = 0; i < orderIds.length; i++) {
+      const orderId = orderIds[i];
+      const order = orders.find((o) => o.id === orderId);
+      if (!order) continue;
+
+      try {
+        // Fetch full details
+        const resp = await api.get(`/outbounds/${orderId}`);
+        const fullData = resp.data.data;
+
+        const pickTask = fullData.pickTask;
+        const packTask = fullData.packTask;
+
+        // Process Picking
+        if (pickTask) {
+          if (pickTask.status === 'PENDING') {
+            await api.post(`/picking/${pickTask.id}/start`);
+          }
+          if (pickTask.status === 'PENDING' || pickTask.status === 'IN_PROGRESS') {
+            const pickItems = fullData.items.map((item: any) => ({
+              productId: item.productId,
+              pickedQty: item.quantity,
+            }));
+            await api.post(`/picking/${pickTask.id}/confirm`, { items: pickItems });
+          }
+        }
+
+        // Re-fetch to get packTask after picking
+        let packTaskId = packTask?.id;
+        if (!packTaskId) {
+          const checkResp = await api.get(`/outbounds/${orderId}`);
+          packTaskId = checkResp.data.data.packTask?.id;
+        }
+
+        // Process Packing
+        if (packTaskId) {
+          await api.post(`/packing/${packTaskId}/start`);
+          const packItems = fullData.items.map((item: any) => ({
+            productId: item.productId,
+            packedQty: item.quantity,
+          }));
+          await api.post(`/packing/${packTaskId}/confirm`, {
+            boxCount: 1,
+            weight: 0.5,
+            notes: 'Bulk Pick & Pack',
+            items: packItems,
+          });
+        }
+      } catch (err: any) {
+        setBulkErrors((prev) => [...prev, `${order.outboundNo}: ${err.response?.data?.message || err.message}`]);
+      }
+
+      setBulkProgress(i + 1);
+    }
+
+    setBulkInProgress(false);
+    setSelectedIds(new Set());
+    fetchProcessingOrders();
+  };
+
   const filteredOrders = orders.filter((o) =>
     o.outboundNo.toLowerCase().includes(query.toLowerCase()) ||
     o.recipientName.toLowerCase().includes(query.toLowerCase()) ||
     o.seller.name.toLowerCase().includes(query.toLowerCase())
   );
 
+  const allSelected = filteredOrders.length > 0 && selectedIds.size === filteredOrders.length;
+
   const columns = [
+    {
+      header: (
+        <button onClick={toggleSelectAll} className="p-0.5">
+          {allSelected ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4 text-slate-400" />}
+        </button>
+      ),
+      accessor: (o: OutboundOrder) => (
+        <button onClick={(e) => { e.stopPropagation(); toggleSelect(o.id); }} className="p-0.5">
+          {selectedIds.has(o.id) ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+        </button>
+      ),
+    },
     {
       header: 'Outbound Order No',
       accessor: (o: OutboundOrder) => (
@@ -325,7 +434,21 @@ export default function FulfillmentPage() {
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* Bulk Pick & Pack button */}
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBulkPickAndPack}
+              disabled={bulkInProgress}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-colors disabled:opacity-50"
+            >
+              {bulkInProgress ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Bulk Processing... ({bulkProgress}/{bulkTotal})</span></>
+              ) : (
+                <><ClipboardCheck className="w-3.5 h-3.5" /><span>Bulk Pick &amp; Pack ({selectedIds.size})</span></>
+              )}
+            </button>
+          )}
           {/* Search */}
           <div className="relative">
             <input
@@ -344,6 +467,34 @@ export default function FulfillmentPage() {
         <div className="p-3 bg-red-500/10 border border-red-500/20 text-xs font-semibold text-red-600 dark:text-red-400 rounded-lg flex items-start gap-2">
           <ShieldAlert className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* Bulk progress banner */}
+      {bulkInProgress && (
+        <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl space-y-2">
+          <div className="flex justify-between items-center text-xs font-bold text-indigo-700 dark:text-indigo-400">
+            <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Bulk Pick &amp; Pack in progress...</span>
+            <span>{bulkProgress} / {bulkTotal} orders</span>
+          </div>
+          <div className="h-2 bg-indigo-200/40 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-indigo-600 transition-all duration-300 rounded-full"
+              style={{ width: `${bulkTotal > 0 ? (bulkProgress / bulkTotal) * 100 : 0}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Bulk errors display */}
+      {!bulkInProgress && bulkErrors.length > 0 && (
+        <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+          <p className="text-xs font-bold text-amber-700 dark:text-amber-400 mb-2">Bulk completed with {bulkErrors.length} error(s):</p>
+          <ul className="space-y-1">
+            {bulkErrors.map((e, i) => (
+              <li key={i} className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">• {e}</li>
+            ))}
+          </ul>
         </div>
       )}
 

@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '@/services/api';
 import { useWmsStore } from '@/store/useWmsStore';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Check, Play, ShieldAlert, X, AlertTriangle, FileDown, Truck, Package, Clock } from 'lucide-react';
+import { ArrowLeft, Check, Play, ShieldAlert, X, AlertTriangle, FileDown, Truck, RotateCcw, Package, Plus, Trash2 } from 'lucide-react';
 
 interface OutboundItem {
   id: string;
@@ -31,6 +31,7 @@ interface TimelineEvent {
 interface OutboundDetails {
   id: string;
   outboundNo: string;
+  sellerId: string;
   type: string;
   status: string;
   recipientName: string;
@@ -40,6 +41,7 @@ interface OutboundDetails {
   recipientProvince?: string;
   recipientPostcode?: string;
   trackingNumber?: string;
+  sellerAwbNo?: string;
   shippingCost?: number;
   codAmount?: number;
   notes?: string;
@@ -56,6 +58,12 @@ interface OutboundDetails {
   };
   items: OutboundItem[];
   timelines: TimelineEvent[];
+}
+
+interface ProductSummary {
+  id: string;
+  sku: string;
+  name: string;
 }
 
 export default function OutboundDetailsPage() {
@@ -75,12 +83,24 @@ export default function OutboundDetailsPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
 
+  // Return inline state
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnProducts, setReturnProducts] = useState<ProductSummary[]>([]);
+  const [returnItems, setReturnItems] = useState<{ productId: string; quantity: number }[]>([]);
+  const [returnNotes, setReturnNotes] = useState('');
+  const [returnLoading, setReturnLoading] = useState(false);
+
   const fetchOutboundDetails = () => {
     setLoading(true);
     api
       .get(`/outbounds/${id}`)
       .then((resp) => {
-        setOutbound(resp.data.data);
+        const data = resp.data.data;
+        setOutbound(data);
+        // Pre-populate tracking from sellerAwbNo if available
+        if (data.sellerAwbNo && !data.trackingNumber) {
+          setTrackingNumber(data.sellerAwbNo);
+        }
       })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
@@ -89,6 +109,50 @@ export default function OutboundDetailsPage() {
   useEffect(() => {
     fetchOutboundDetails();
   }, [id]);
+
+  const openReturnModal = async () => {
+    if (!outbound) return;
+    setReturnOpen(true);
+    // Pre-populate return items from outbound items
+    setReturnItems(outbound.items.map((item) => ({ productId: item.productId, quantity: item.quantity })));
+    // Fetch products for the seller
+    const sellerId = outbound.seller ? undefined : undefined; // We use outbound items directly
+    setReturnProducts(
+      outbound.items.map((item) => ({
+        id: item.productId,
+        sku: item.product.sku,
+        name: item.product.name,
+      }))
+    );
+  };
+
+  const handleReturnSubmit = async () => {
+    if (!outbound) return;
+    setReturnLoading(true);
+    setError(null);
+    try {
+      const validItems = returnItems.filter((i) => i.quantity > 0);
+      if (validItems.length === 0) {
+        setError('Please add at least one item to return');
+        setReturnLoading(false);
+        return;
+      }
+
+      const resp = await api.post('/returns', {
+        sellerId: outbound.sellerId,
+        outboundId: outbound.id,
+        notes: returnNotes || undefined,
+        items: validItems,
+      });
+
+      setReturnOpen(false);
+      router.push(`/returns/${resp.data.data.id}`);
+    } catch (err: any) {
+      setError(err.response?.data?.message || t('common.error'));
+    } finally {
+      setReturnLoading(false);
+    }
+  };
 
   const handleAction = async (action: 'submit' | 'ship' | 'complete' | 'cancel') => {
     setError(null);
@@ -147,6 +211,7 @@ export default function OutboundDetailsPage() {
 
   const isWmsUser = !user?.sellerId;
   const showLabelButton = ['READY_TO_SHIP', 'SHIPPED', 'COMPLETED'].includes(outbound.status);
+  const canReturn = ['SHIPPED', 'COMPLETED'].includes(outbound.status);
 
   return (
     <div className="space-y-6">
@@ -169,16 +234,29 @@ export default function OutboundDetailsPage() {
           </div>
         </div>
 
-        {/* Download shipping label */}
-        {showLabelButton && (
-          <button
-            onClick={handleDownloadLabel}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-colors"
-          >
-            <FileDown className="w-4 h-4" />
-            <span>Download Shipping Label</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Download shipping label */}
+          {showLabelButton && (
+            <button
+              onClick={handleDownloadLabel}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-colors"
+            >
+              <FileDown className="w-4 h-4" />
+              <span>Download Shipping Label</span>
+            </button>
+          )}
+
+          {/* Return button — shows for shipped/completed */}
+          {canReturn && (
+            <button
+              onClick={openReturnModal}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 bg-amber-500/10 hover:bg-amber-500 hover:text-white text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-lg transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Create Return</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Visual Status Pipeline */}
@@ -204,7 +282,6 @@ export default function OutboundDetailsPage() {
         return (
           <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm">
             <div className="relative flex justify-between items-center max-w-xl mx-auto">
-              {/* Connecting progress lines */}
               <div className="absolute left-4 right-4 top-[14px] h-0.5 bg-slate-100 dark:bg-zinc-850 z-0">
                 <div
                   className="h-full bg-indigo-600 transition-all duration-500"
@@ -257,7 +334,7 @@ export default function OutboundDetailsPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
+
         {/* Left Side: Items & timeline */}
         <div className="lg:col-span-8 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm space-y-4">
           <div className="flex border-b border-slate-100 dark:border-zinc-800 pb-2 gap-4">
@@ -309,7 +386,6 @@ export default function OutboundDetailsPage() {
               </table>
             </div>
           ) : (
-            // TIMELINE COMPONENT
             <div className="relative pl-6 border-l border-slate-200 dark:border-zinc-800 space-y-6 py-2">
               {outbound.timelines.map((evt) => (
                 <div key={evt.id} className="relative">
@@ -336,7 +412,7 @@ export default function OutboundDetailsPage() {
         <div className="lg:col-span-4 space-y-4">
           <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm space-y-4">
             <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">Shipping parameters</h4>
-            
+
             <div className="flex justify-between items-center text-xs">
               <span className="text-slate-400 font-bold uppercase tracking-wider">Status:</span>
               <span className="font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">{outbound.status}</span>
@@ -353,6 +429,13 @@ export default function OutboundDetailsPage() {
                 {outbound.recipientAddress}, {outbound.recipientCity}, {outbound.recipientProvince} {outbound.recipientPostcode}
               </span>
             </div>
+
+            {outbound.sellerAwbNo && (
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-bold uppercase tracking-wider">AWB Seller:</span>
+                <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">{outbound.sellerAwbNo}</span>
+              </div>
+            )}
 
             <div className="flex justify-between items-center text-xs">
               <span className="text-slate-400 font-bold uppercase tracking-wider">Tracking resi No:</span>
@@ -374,7 +457,7 @@ export default function OutboundDetailsPage() {
             )}
           </div>
 
-          {/* Action buttons matching outbound lifecycle transitions */}
+          {/* Action buttons */}
           <div className="space-y-2">
             {/* 1. Seller draft submit & reserve */}
             {outbound.status === 'DRAFT' && (
@@ -435,6 +518,11 @@ export default function OutboundDetailsPage() {
               </button>
             </div>
             <div className="p-6 space-y-4">
+              {outbound.sellerAwbNo && (
+                <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                  AWB dari Seller: <span className="font-mono font-bold">{outbound.sellerAwbNo}</span> (sudah pre-filled)
+                </div>
+              )}
               <div>
                 <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Courier Tracking Airwaybill (Resi)</label>
                 <input
@@ -450,7 +538,7 @@ export default function OutboundDetailsPage() {
                 onClick={() => handleAction('ship')}
                 className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white text-xs font-bold rounded-lg transition-colors"
               >
-                DISPATCH DISPATCH ORDER
+                DISPATCH ORDER
               </button>
             </div>
           </div>
@@ -487,6 +575,91 @@ export default function OutboundDetailsPage() {
                 className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors"
               >
                 CONFIRM CANCELLATION
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return from Outbound Modal */}
+      {returnOpen && outbound && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 flex justify-between items-center shrink-0">
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <RotateCcw className="w-4 h-4 text-amber-500" />
+                  Create Customer Return
+                </h4>
+                <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Linked to: {outbound.outboundNo}</p>
+              </div>
+              <button onClick={() => setReturnOpen(false)} className="p-1 rounded text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              {error && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 text-xs font-semibold text-red-600 dark:text-red-400 rounded-lg">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Return Items</h5>
+                <div className="space-y-2">
+                  {returnItems.map((ri, idx) => {
+                    const prod = returnProducts.find((p) => p.id === ri.productId);
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="flex-1 px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                          <span className="font-mono font-bold text-slate-900 dark:text-white">{prod?.sku}</span> — {prod?.name}
+                        </div>
+                        <div className="w-20">
+                          <input
+                            type="number"
+                            min="1"
+                            value={ri.quantity}
+                            onChange={(e) => {
+                              const next = [...returnItems];
+                              next[idx] = { ...next[idx], quantity: Number(e.target.value) };
+                              setReturnItems(next);
+                            }}
+                            className="w-full px-2 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold text-center focus:outline-none"
+                          />
+                        </div>
+                        <button
+                          onClick={() => setReturnItems(returnItems.filter((_, i) => i !== idx))}
+                          className="p-2 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-500/10 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Notes (Optional)</label>
+                <textarea
+                  value={returnNotes}
+                  onChange={(e) => setReturnNotes(e.target.value)}
+                  placeholder="Customer contacted support / barang rusak dalam pengiriman..."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-semibold h-16 focus:outline-none resize-none"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-zinc-800 shrink-0">
+              <button
+                onClick={handleReturnSubmit}
+                disabled={returnLoading || returnItems.length === 0}
+                className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40"
+              >
+                {returnLoading ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <><RotateCcw className="w-4 h-4" /><span>Submit Customer Return</span></>
+                )}
               </button>
             </div>
           </div>
