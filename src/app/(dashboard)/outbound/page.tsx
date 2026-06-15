@@ -6,7 +6,7 @@ import { api } from '@/services/api';
 import { useWmsStore } from '@/store/useWmsStore';
 import { DataTable } from '@/components/DataTable';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, Eye } from 'lucide-react';
+import { Plus, Search, Eye, Download, Loader2, CheckSquare, Square } from 'lucide-react';
 
 interface OutboundHeader {
   id: string;
@@ -36,6 +36,10 @@ export default function OutboundPage() {
   const [query, setQuery] = useState('');
   const router = useRouter();
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [labelDownloading, setLabelDownloading] = useState(false);
+
   const fetchOutbounds = () => {
     const activeSellerFilter = user?.sellerId || '';
     api
@@ -50,6 +54,49 @@ export default function OutboundPage() {
   useEffect(() => {
     fetchOutbounds();
   }, [page, query]);
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedIds(next);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === data.length && data.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(data.map((o) => o.id)));
+    }
+  };
+
+  const handleBulkDownloadLabels = async () => {
+    if (selectedIds.size === 0) return;
+    setLabelDownloading(true);
+    try {
+      const response = await api.post(
+        '/shipping-label/bulk',
+        { outboundIds: Array.from(selectedIds) },
+        { responseType: 'blob' },
+      );
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      link.download = `bulk_labels_${timestamp}_${selectedIds.size}orders.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate bulk shipping labels.');
+    } finally {
+      setLabelDownloading(false);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -72,7 +119,25 @@ export default function OutboundPage() {
     }
   };
 
+  const allSelected = data.length > 0 && selectedIds.size === data.length;
+
   const columns = [
+    {
+      header: (
+        <button onClick={toggleSelectAll} className="p-0.5">
+          {allSelected
+            ? <CheckSquare className="w-4 h-4 text-indigo-600" />
+            : <Square className="w-4 h-4 text-slate-400" />}
+        </button>
+      ),
+      accessor: (o: OutboundHeader) => (
+        <button onClick={(e) => { e.stopPropagation(); toggleSelect(o.id); }} className="p-0.5">
+          {selectedIds.has(o.id)
+            ? <CheckSquare className="w-4 h-4 text-indigo-600" />
+            : <Square className="w-4 h-4 text-slate-300" />}
+        </button>
+      ),
+    },
     {
       header: 'Outbound Order No',
       accessor: (o: OutboundHeader) => (
@@ -141,7 +206,22 @@ export default function OutboundPage() {
           </p>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* Bulk Download Labels — visible when any rows are selected */}
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBulkDownloadLabels}
+              disabled={labelDownloading}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition-colors disabled:opacity-50"
+            >
+              {labelDownloading ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Generating PDF...</span></>
+              ) : (
+                <><Download className="w-3.5 h-3.5" /><span>Download Labels ({selectedIds.size})</span></>
+              )}
+            </button>
+          )}
+
           {/* Search */}
           <div className="relative">
             <input

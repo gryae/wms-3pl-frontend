@@ -21,6 +21,7 @@ import {
   ClipboardCheck,
   CheckSquare,
   Square,
+  Download,
 } from 'lucide-react';
 
 interface OutboundItem {
@@ -86,6 +87,7 @@ export default function FulfillmentPage() {
   const [bulkProgress, setBulkProgress] = useState(0);
   const [bulkTotal, setBulkTotal] = useState(0);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+  const [labelDownloading, setLabelDownloading] = useState(false);
 
   const fetchProcessingOrders = async () => {
     setLoading(true);
@@ -338,6 +340,31 @@ export default function FulfillmentPage() {
     fetchProcessingOrders();
   };
 
+  const handleBulkDownloadLabels = async () => {
+    if (selectedIds.size === 0) return;
+    setLabelDownloading(true);
+    try {
+      const response = await api.post(
+        '/shipping-label/bulk',
+        { outboundIds: Array.from(selectedIds) },
+        { responseType: 'blob' },
+      );
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      link.download = `bulk_labels_${timestamp}_${selectedIds.size}orders.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate bulk shipping labels.');
+    } finally {
+      setLabelDownloading(false);
+    }
+  };
+
   const filteredOrders = orders.filter((o) =>
     o.outboundNo.toLowerCase().includes(query.toLowerCase()) ||
     o.recipientName.toLowerCase().includes(query.toLowerCase()) ||
@@ -435,19 +462,35 @@ export default function FulfillmentPage() {
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          {/* Bulk Pick & Pack button */}
+          {/* Bulk action buttons — visible when any rows are selected */}
           {selectedIds.size > 0 && (
-            <button
-              onClick={handleBulkPickAndPack}
-              disabled={bulkInProgress}
-              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-colors disabled:opacity-50"
-            >
-              {bulkInProgress ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Bulk Processing... ({bulkProgress}/{bulkTotal})</span></>
-              ) : (
-                <><ClipboardCheck className="w-3.5 h-3.5" /><span>Bulk Pick &amp; Pack ({selectedIds.size})</span></>
-              )}
-            </button>
+            <>
+              {/* Bulk Pick & Pack */}
+              <button
+                onClick={handleBulkPickAndPack}
+                disabled={bulkInProgress || labelDownloading}
+                className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-colors disabled:opacity-50"
+              >
+                {bulkInProgress ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Processing... ({bulkProgress}/{bulkTotal})</span></>
+                ) : (
+                  <><ClipboardCheck className="w-3.5 h-3.5" /><span>Bulk Pick &amp; Pack ({selectedIds.size})</span></>
+                )}
+              </button>
+
+              {/* Bulk Download Labels */}
+              <button
+                onClick={handleBulkDownloadLabels}
+                disabled={bulkInProgress || labelDownloading}
+                className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition-colors disabled:opacity-50"
+              >
+                {labelDownloading ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Generating PDF...</span></>
+                ) : (
+                  <><Download className="w-3.5 h-3.5" /><span>Download Labels ({selectedIds.size})</span></>
+                )}
+              </button>
+            </>
           )}
           {/* Search */}
           <div className="relative">
